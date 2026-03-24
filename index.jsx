@@ -5,6 +5,10 @@ export default function WaybackMachine() {
   const [url, setUrl] = useState('');
   const [searchedUrl, setSearchedUrl] = useState('');
   const [selectedYear, setSelectedYear] = useState(null);
+  const [viewingSnapshots, setViewingSnapshots] = useState(false);
+  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedSnapshot, setSelectedSnapshot] = useState(null);
+  const [notification, setNotification] = useState(null);
 
   // Mock data - snapshots for demonstration
   const mockSnapshots = useMemo(() => {
@@ -18,11 +22,39 @@ export default function WaybackMachine() {
     }));
   }, [searchedUrl]);
 
+  // Generate detailed snapshots for a year
+  const yearSnapshotDetails = useMemo(() => {
+    if (!selectedYear) return [];
+    const yearData = mockSnapshots.find(y => y.year === selectedYear);
+    if (!yearData) return [];
+    
+    const snapshots = [];
+    yearData.months.forEach((daysInMonth, monthIdx) => {
+      if (daysInMonth > 0) {
+        for (let i = 0; i < Math.min(daysInMonth, 10); i++) {
+          const day = Math.floor(Math.random() * daysInMonth) + 1;
+          const hour = Math.floor(Math.random() * 24);
+          const minute = Math.floor(Math.random() * 60);
+          snapshots.push({
+            id: `${selectedYear}-${monthIdx}-${i}`,
+            date: new Date(selectedYear, monthIdx, day, hour, minute),
+            status: Math.random() > 0.2 ? 'success' : 'partial',
+            size: Math.floor(Math.random() * 500) + 50
+          });
+        }
+      }
+    });
+    return snapshots.sort((a, b) => b.date - a.date);
+  }, [selectedYear, mockSnapshots]);
+
   const handleSearch = (e) => {
     e.preventDefault();
     if (url.trim()) {
       setSearchedUrl(url);
       setSelectedYear(null);
+      setViewingSnapshots(false);
+      setSelectedDate(null);
+      setSelectedSnapshot(null);
     }
   };
 
@@ -31,6 +63,40 @@ export default function WaybackMachine() {
   }, [mockSnapshots]);
 
   const yearSnapshots = selectedYear ? mockSnapshots.find(y => y.year === selectedYear)?.count : 0;
+
+  const formatDate = (date) => {
+    return date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  const handleOpenFullPage = () => {
+    setNotification({
+      type: 'success',
+      message: `Opening snapshot from ${formatDate(selectedSnapshot.date)}...`
+    });
+    // In a real app, this would open the archived page or an iframe
+    setTimeout(() => {
+      window.open(`https://web.archive.org/web/${selectedSnapshot.date.getFullYear()}${String(selectedSnapshot.date.getMonth() + 1).padStart(2, '0')}${String(selectedSnapshot.date.getDate()).padStart(2, '0')}*/${searchedUrl}`, '_blank');
+    }, 500);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  const handleDownloadHTML = () => {
+    setNotification({
+      type: 'info',
+      message: `Downloading HTML snapshot from ${formatDate(selectedSnapshot.date)}...`
+    });
+    // In a real app, this would trigger a download
+    setTimeout(() => {
+      const element = document.createElement('a');
+      const file = new Blob(['<!-- Archived page snapshot -->\n<!-- From: ' + searchedUrl + '\n Date: ' + formatDate(selectedSnapshot.date) + ' \n-->\n\n<!DOCTYPE html>\n<html>\n<head><title>' + searchedUrl + '</title></head>\n<body><h1>Snapshot from ' + formatDate(selectedSnapshot.date) + '</h1></body>\n</html>'], {type: 'text/html'});
+      element.href = URL.createObjectURL(file);
+      element.download = `${searchedUrl.replace(/[^a-z0-9]/gi, '_')}_${selectedSnapshot.date.getTime()}.html`;
+      document.body.appendChild(element);
+      element.click();
+      document.body.removeChild(element);
+    }, 500);
+    setTimeout(() => setNotification(null), 3000);
+  };
 
   return (
     <div style={styles.container}>
@@ -48,6 +114,21 @@ export default function WaybackMachine() {
           <p style={styles.tagline}>Explore the internet's history</p>
         </div>
       </header>
+
+      {/* Notification */}
+      {notification && (
+        <div style={{
+          ...styles.notification,
+          backgroundColor: notification.type === 'success' ? 'rgba(0, 212, 255, 0.2)' : 'rgba(255, 152, 0, 0.2)',
+          borderColor: notification.type === 'success' ? '#00d4ff' : '#ff9800'
+        }}>
+          <span style={{
+            color: notification.type === 'success' ? '#00d4ff' : '#ff9800'
+          }}>
+            {notification.message}
+          </span>
+        </div>
+      )}
 
       {/* Hero Section */}
       <section style={styles.hero}>
@@ -142,7 +223,7 @@ export default function WaybackMachine() {
             </div>
 
             {/* Year Detail */}
-            {selectedYear && (
+            {selectedYear && !viewingSnapshots && (
               <div style={styles.yearDetail}>
                 <div style={styles.yearDetailContent}>
                   <h3 style={styles.yearDetailTitle}>{selectedYear}</h3>
@@ -162,6 +243,7 @@ export default function WaybackMachine() {
                             backgroundColor: snapshotData > 0 ? '#00d4ff' : 'rgba(100, 100, 100, 0.2)'
                           }}
                           title={`${month}: ${snapshotData} snapshots`}
+                          onClick={() => snapshotData > 0 && setViewingSnapshots(true)}
                         >
                           <span style={styles.monthLabel}>{month}</span>
                           {snapshotData > 0 && <span style={styles.monthCount}>{snapshotData}</span>}
@@ -170,9 +252,139 @@ export default function WaybackMachine() {
                     })}
                   </div>
                   
-                  <button style={styles.viewButton}>
+                  <button 
+                    style={styles.viewButton}
+                    onClick={() => setViewingSnapshots(true)}
+                    onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                    onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
+                  >
                     View All Snapshots from {selectedYear}
                   </button>
+                </div>
+              </div>
+            )}
+
+            {/* Snapshots List */}
+            {selectedYear && viewingSnapshots && !selectedSnapshot && (
+              <div style={styles.snapshotsList}>
+                <div style={styles.snapshotsHeader}>
+                  <h3 style={styles.snapshotsTitle}>
+                    {yearSnapshotDetails.length} Snapshots from {selectedYear}
+                  </h3>
+                  <button 
+                    style={styles.backButton}
+                    onClick={() => setViewingSnapshots(false)}
+                  >
+                    ← Back to Year View
+                  </button>
+                </div>
+
+                <div style={styles.snapshotsGrid}>
+                  {yearSnapshotDetails.map((snapshot) => (
+                    <div
+                      key={snapshot.id}
+                      style={styles.snapshotCard}
+                      onClick={() => setSelectedSnapshot(snapshot)}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateY(-4px)';
+                        e.currentTarget.style.boxShadow = '0 12px 24px rgba(0, 212, 255, 0.2)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateY(0)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                      }}
+                    >
+                      <div style={styles.snapshotDate}>
+                        {formatDate(snapshot.date)}
+                      </div>
+                      <div style={styles.snapshotStatus}>
+                        <span style={{
+                          ...styles.statusBadge,
+                          backgroundColor: snapshot.status === 'success' ? '#00d4ff' : '#ff9800'
+                        }}>
+                          {snapshot.status === 'success' ? '✓ Complete' : '⚠ Partial'}
+                        </span>
+                      </div>
+                      <div style={styles.snapshotSize}>
+                        {snapshot.size} KB
+                      </div>
+                      <div style={styles.snapshotAction}>
+                        View Snapshot
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Snapshot Detail */}
+            {selectedSnapshot && (
+              <div style={styles.snapshotDetail}>
+                <div style={styles.snapshotDetailHeader}>
+                  <button 
+                    style={styles.backButton}
+                    onClick={() => setSelectedSnapshot(null)}
+                  >
+                    ← Back to Snapshots
+                  </button>
+                  <h2 style={styles.snapshotDetailTitle}>
+                    Snapshot from {formatDate(selectedSnapshot.date)}
+                  </h2>
+                </div>
+
+                <div style={styles.snapshotDetailContent}>
+                  <div style={styles.snapshotPreview}>
+                    <div style={styles.previewPlaceholder}>
+                      <Globe size={48} />
+                      <p>Preview of {searchedUrl}</p>
+                      <p style={{ fontSize: '12px', color: '#999' }}>
+                        Captured on {formatDate(selectedSnapshot.date)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div style={styles.snapshotMeta}>
+                    <div style={styles.metaItem}>
+                      <span style={styles.metaLabel}>Status</span>
+                      <span style={{
+                        ...styles.metaValue,
+                        color: selectedSnapshot.status === 'success' ? '#00d4ff' : '#ff9800'
+                      }}>
+                        {selectedSnapshot.status === 'success' ? 'Complete' : 'Partial'}
+                      </span>
+                    </div>
+                    <div style={styles.metaItem}>
+                      <span style={styles.metaLabel}>Date</span>
+                      <span style={styles.metaValue}>{formatDate(selectedSnapshot.date)}</span>
+                    </div>
+                    <div style={styles.metaItem}>
+                      <span style={styles.metaLabel}>Size</span>
+                      <span style={styles.metaValue}>{selectedSnapshot.size} KB</span>
+                    </div>
+                    <div style={styles.metaItem}>
+                      <span style={styles.metaLabel}>URL</span>
+                      <span style={styles.metaValue}>{searchedUrl}</span>
+                    </div>
+                  </div>
+
+                  <div style={styles.snapshotActions}>
+                    <button 
+                      style={{...styles.actionButton, ...styles.actionButtonPrimary}}
+                      onMouseEnter={(e) => e.target.style.transform = 'scale(1.02)'}
+                      onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                      onClick={handleOpenFullPage}
+                    >
+                      Open Full Page
+                    </button>
+                    <button 
+                      style={styles.actionButton}
+                      onMouseEnter={(e) => e.target.style.transform = 'scale(1.02)'}
+                      onMouseLeave={(e) => e.target.style.transform = 'scale(1)'}
+                      onClick={handleDownloadHTML}
+                    >
+                      Download HTML
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
@@ -191,11 +403,24 @@ export default function WaybackMachine() {
               { icon: <Zap size={24} />, title: 'Instant Access', desc: 'View archived versions in seconds' },
               { icon: <Globe size={24} />, title: 'Comprehensive', desc: 'Billions of pages from around the world' }
             ].map((feature, idx) => (
-              <div key={idx} style={styles.featureCard}>
+              <a
+                key={idx} 
+                style={styles.featureCard}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'rgba(0, 212, 255, 0.1)';
+                  e.currentTarget.style.transform = 'translateY(-8px)';
+                  e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.3)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'rgba(0, 212, 255, 0.05)';
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.borderColor = 'rgba(0, 212, 255, 0.1)';
+                }}
+              >
                 <div style={styles.featureIcon}>{feature.icon}</div>
                 <h3 style={styles.featureTitle}>{feature.title}</h3>
                 <p style={styles.featureDesc}>{feature.desc}</p>
-              </div>
+              </a>
             ))}
           </div>
         </section>
@@ -295,6 +520,21 @@ const styles = {
     fontSize: '14px',
     color: '#999',
     fontWeight: '400'
+  },
+  notification: {
+    position: 'fixed',
+    top: '80px',
+    left: '50%',
+    transform: 'translateX(-50%)',
+    zIndex: 100,
+    padding: '16px 24px',
+    borderRadius: '8px',
+    border: '1px solid',
+    fontSize: '14px',
+    fontWeight: '500',
+    animation: 'slideUp 0.3s ease-out',
+    maxWidth: '500px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.3)'
   },
   hero: {
     position: 'relative',
@@ -579,5 +819,162 @@ const styles = {
     fontSize: '14px',
     color: '#999',
     fontWeight: '300'
+  },
+  snapshotsList: {
+    background: 'rgba(0, 212, 255, 0.05)',
+    border: '1px solid rgba(0, 212, 255, 0.2)',
+    borderRadius: '12px',
+    padding: '32px',
+    marginTop: '20px',
+    animation: 'slideUp 0.4s ease-out'
+  },
+  snapshotsHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '32px'
+  },
+  snapshotsTitle: {
+    fontSize: '24px',
+    fontWeight: '700',
+    fontFamily: "'Space Grotesk', sans-serif"
+  },
+  backButton: {
+    background: 'transparent',
+    border: '1px solid rgba(0, 212, 255, 0.3)',
+    color: '#00d4ff',
+    padding: '10px 16px',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    fontWeight: '500',
+    transition: 'all 0.2s ease',
+    fontFamily: "'Inter', sans-serif"
+  },
+  snapshotsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+    gap: '16px'
+  },
+  snapshotCard: {
+    background: 'rgba(100, 100, 100, 0.1)',
+    border: '1px solid rgba(0, 212, 255, 0.1)',
+    borderRadius: '10px',
+    padding: '20px',
+    cursor: 'pointer',
+    transition: 'all 0.3s ease',
+    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)'
+  },
+  snapshotDate: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#00d4ff',
+    marginBottom: '12px'
+  },
+  snapshotStatus: {
+    marginBottom: '12px'
+  },
+  statusBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '4px',
+    fontSize: '12px',
+    fontWeight: '600',
+    color: '#000'
+  },
+  snapshotSize: {
+    fontSize: '12px',
+    color: '#999',
+    marginBottom: '12px'
+  },
+  snapshotAction: {
+    fontSize: '13px',
+    color: '#00d4ff',
+    fontWeight: '500'
+  },
+  snapshotDetail: {
+    background: 'rgba(0, 212, 255, 0.05)',
+    border: '1px solid rgba(0, 212, 255, 0.2)',
+    borderRadius: '12px',
+    padding: '32px',
+    marginTop: '20px',
+    animation: 'slideUp 0.4s ease-out'
+  },
+  snapshotDetailHeader: {
+    marginBottom: '32px'
+  },
+  snapshotDetailTitle: {
+    fontSize: '28px',
+    fontWeight: '700',
+    fontFamily: "'Space Grotesk', sans-serif",
+    marginLeft: '0',
+    marginTop: '16px'
+  },
+  snapshotDetailContent: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '32px',
+    alignItems: 'start'
+  },
+  snapshotPreview: {
+    borderRadius: '12px',
+    overflow: 'hidden',
+    background: 'rgba(100, 100, 100, 0.1)',
+    border: '1px solid rgba(0, 212, 255, 0.1)'
+  },
+  previewPlaceholder: {
+    aspectRatio: '16 / 10',
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#666',
+    gap: '12px'
+  },
+  snapshotMeta: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px'
+  },
+  metaItem: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '4px'
+  },
+  metaLabel: {
+    fontSize: '12px',
+    color: '#999',
+    textTransform: 'uppercase',
+    fontWeight: '600',
+    letterSpacing: '0.5px'
+  },
+  metaValue: {
+    fontSize: '16px',
+    color: '#fff',
+    fontWeight: '500',
+    wordBreak: 'break-all'
+  },
+  snapshotActions: {
+    gridColumn: '1 / -1',
+    display: 'flex',
+    gap: '12px'
+  },
+  actionButton: {
+    flex: 1,
+    padding: '12px 24px',
+    background: 'rgba(0, 212, 255, 0.1)',
+    border: '1px solid rgba(0, 212, 255, 0.3)',
+    color: '#00d4ff',
+    fontWeight: '600',
+    borderRadius: '8px',
+    cursor: 'pointer',
+    fontSize: '14px',
+    transition: 'all 0.2s ease',
+    fontFamily: "'Inter', sans-serif"
+  },
+  actionButtonPrimary: {
+    background: 'linear-gradient(135deg, #00d4ff 0%, #0099ff 100%)',
+    color: '#000',
+    border: 'none'
   }
 };
